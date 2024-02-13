@@ -1,5 +1,5 @@
 import trimesh
-from .graph_mesh import Graph, MidVert, Edge
+from graph_mesh import Graph, MidVert, Edge
 import numpy as np
 from typing import List, Dict, Tuple
 import heapq
@@ -28,7 +28,7 @@ def _subdivision_step(mesh):
         else:
             new_v.pos = (verts[v1] + verts[v2]) / 2
         new_verts[(v1, v2)] = new_v
-    v_pos = np.array([v.pos for v in new_verts])
+    v_pos = np.array([v.pos for v in new_verts.values()])
 
     even_verts = np.zeros_like(verts)
     for i, v in enumerate(graph.verts):
@@ -41,10 +41,11 @@ def _subdivision_step(mesh):
             even_verts[i] = beta * verts[i] + (1 - beta) * (verts[n_verts[0]] + verts[n_verts[1]]) / 2
             continue
 
-        beta = 3 / (8 * n) if n > 3 else 3 / 16
+        # beta = 3 / (8 * n) if n > 3 else 3 / 16
+        beta = 1/n * (5/8 - (3/8 + 1/4 * np.cos(2 * np.pi / n))**2)
         even_verts[i] = (1 - n * beta) * verts[i] + beta * np.sum(verts[list(n_verts)], axis=0)
     
-    new_verts = np.concatenate([even_verts, v_pos], axis=0)
+    new_verts_p = np.concatenate([even_verts, v_pos], axis=0)
     new_faces = []
 
     for f in faces:
@@ -58,7 +59,7 @@ def _subdivision_step(mesh):
         new_faces.append([v6, v5, v3])
         new_faces.append([v4, v5, v6])
     
-    mesh = trimesh.Trimesh(new_verts, new_faces)
+    mesh = trimesh.Trimesh(new_verts_p, new_faces)
     return mesh
 
 
@@ -92,7 +93,7 @@ def get_min_err(K):
                       [K[3], K[6], K[8], K[9]]])
     k_mat[3, 3] = 1
     k_mat[3, :3] = 0
-    min_v = np.linalg.inv(k_mat) @ np.array([[0, 0, 0, 1]]) # (4, 1)
+    min_v = np.linalg.inv(k_mat) @ np.array([[0, 0, 0, 1]]).T # (4, 1)
     min_err = min_v.T @ k_mat @ min_v
     min_err = min_err[0, 0]
     return min_v, min_err
@@ -126,13 +127,15 @@ def simplify_quadric_error(mesh, face_count=1):
         if graph.is_interior_edge(vid1, vid2):
             v1, v2 = graph.verts[vid1], graph.verts[vid2]
             e = graph.edges[(vid1, vid2)]
-            K = v1.quadric + v2.quadric
+            K = v1.quadrics + v2.quadrics
             e.quadrics = K
             e.min_vert, e.min_err = get_min_err(K)
         else:
+            e = graph.edges[(vid1, vid2)]
             e.min_err = float('inf')
 
-    heap = heapq.heapify(list(graph.edges.values()))
+    heap = list(graph.edges.values())
+    heapq.heapify(heap)
     while len(graph.faces) > face_count:
         e = heapq.heappop(heap)
         if e.min_err == float('inf'):
@@ -140,15 +143,15 @@ def simplify_quadric_error(mesh, face_count=1):
             break
         if e.quadrics is None: # no longer valid after collapse
             continue
-        vid1, vid2 = e.verts
+        vid1, vid2 = e.v1, e.v2
         v1, v2 = graph.verts[vid1], graph.verts[vid2]
         if v1.pos is None or v2.pos is None:  # already collapsed
             continue
 
         v1.pos = e.min_vert
         v2.pos = None
-        v1.quadric = e.quadrics
-        v2.quadric = None
+        v1.quadrics = e.quadrics
+        v2.quadrics = None
 
         # collapse the edge
         for fid in face_dict[vid1]:
@@ -165,7 +168,7 @@ def simplify_quadric_error(mesh, face_count=1):
                     prev_e.quadrics = None
 
                     new_e = Edge(vid1, vid)
-                    new_e.quadrics = v1.quadric + graph.verts[vid].quadric
+                    new_e.quadrics = v1.quadrics + graph.verts[vid].quadrics
                     new_e.min_vert, new_e.min_err = get_min_err(new_e.quadrics)
                     graph.edges[key] = new_e
                     heapq.heappush(heap, new_e)
@@ -208,20 +211,31 @@ if __name__ == '__main__':
     
     # apply loop subdivision over the loaded mesh
     mesh_subdivided = mesh.subdivide_loop(iterations=1)
+    mesh_subdivided.export('assets/assignment1/gt_1.obj')
     
     # TODO: implement your own loop subdivision here
-    mesh_subdivided = subdivision_loop(mesh, iterations=1)
+    for i in range(1, 5):
+        mesh_subdivided = subdivision_loop(mesh, iterations=i)
     
-    # print the new mesh information and save the mesh
-    print(f'Subdivided Mesh Info: {mesh_subdivided}')
-    mesh_subdivided.export('assets/assignment1/cube_subdivided.obj')
-    
+        # print the new mesh information and save the mesh
+        print(f'Subdivided Mesh Info: {mesh_subdivided}')
+        mesh_subdivided.export(f'assets/assignment1/cube_subdivided_{i}.obj')
+
+    mesh = trimesh.creation.icosahedron()
+    print(f'Mesh Info: {mesh}')
+    for i in range(1, 5):
+        mesh_subdivided = subdivision_loop(mesh, iterations=i)
+        print(f'Subdivided Mesh Info: {mesh_subdivided}')
+        mesh_subdivided.export(f'assets/assignment1/icosahedron_subdivided_{i}.obj')
+        
     # quadratic error mesh decimation
-    # mesh_decimated = mesh.simplify_quadric_decimation(4)
+    mesh = trimesh.load('assets/bunny.obj')
+    mesh_decimated = mesh.simplify_quadric_decimation(1024)
+    mesh_decimated.export('assets/assignment1/bunny_decimated_gt.obj')
     
     # TODO: implement your own quadratic error mesh decimation here
-    mesh_decimated = simplify_quadric_error(mesh, face_count=1)
+    mesh_decimated = simplify_quadric_error(mesh, face_count=1024)
     
     # print the new mesh information and save the mesh
     print(f'Decimated Mesh Info: {mesh_decimated}')
-    mesh_decimated.export('assets/assignment1/cube_decimated.obj')
+    mesh_decimated.export('assets/assignment1/bunny_decimated.obj')
