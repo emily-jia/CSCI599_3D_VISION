@@ -1,24 +1,42 @@
 import numpy as np
 from typing import List, Dict, Tuple
+import functools
 
 class Vertex:
     def __init__(self, idx, pos) -> None:
         self.idx = idx
         self.pos = pos
         self.adj_vs = set()
+        self.quadrics = None
 
     def add_adj(self, vid):
         self.adj_vs.add(vid)
 
+    def add_face_quadric(self, quadric):
+        if self.quadrics is None:
+            self.quadrics = quadric
+        else:
+            self.quadrics += quadric
 
+
+@functools.total_ordering
 class Edge:
     def __init__(self, v1, v2) -> None:
         self.v1 = v1
         self.v2 = v2
         self.adj_fs = set()
+        self.quadrics = None
+        self.min_err = None
+        self.min_vert = None
     
     def add_adj(self, fid):
         self.adj_fs.add(fid)
+    
+    def __gt__(self, other):
+        return self.min_err > other.min_err
+    
+    def __eq__(self, __value) -> bool:
+        return self.min_err == __value.min_err
 
 
 class MidVert:
@@ -61,6 +79,7 @@ class Graph:
             self.edges[(v1, v2)].add_adj(i)
             self.edges[(v2, v3)].add_adj(i)
             self.edges[(v1, v3)].add_adj(i)
+        self.faces: List = faces.tolist()
 
     def is_interior_edge(self, v1, v2):
         if v1 > v2:
