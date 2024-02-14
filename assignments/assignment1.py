@@ -97,6 +97,7 @@ def get_min_err(K):
     min_v = np.linalg.inv(k_mat) @ np.array([[0, 0, 0, 1]]).T # (4, 1)
     min_err = min_v.T @ orig_k_mat @ min_v
     min_err = min_err[0, 0]
+    min_v = min_v.squeeze()[:3]
     return min_v, min_err
 
 
@@ -153,7 +154,6 @@ def simplify_quadric_error(mesh, face_count=1):
         v2.quadrics = None
 
         v1.adj_vs.remove(vid2)
-        print("pop3", vid1, vid2)
         graph.edges.pop((vid1, vid2) if vid1 < vid2 else (vid2, vid1))
         remove_vs = list()
         # collapse the edge
@@ -165,12 +165,13 @@ def simplify_quadric_error(mesh, face_count=1):
 
                 other_v = [v for v in graph.faces[fid] if v != vid2 and v != vid1][0]
                 remove_vs.append(other_v)
-                print("pop2", vid2, other_v)
                 graph.edges.pop((vid2, other_v) if vid2 < other_v else (other_v, vid2))
                 graph.verts[other_v].adj_vs.remove(vid2)
                 face_dict[other_v].remove(fid)
+                
         for fid in del_faces:
             face_dict[vid1].remove(fid)
+            graph.faces[fid] = None
             
         for vid in v1.adj_vs:
             key = (vid1, vid) if vid1 < vid else (vid, vid1)
@@ -186,7 +187,7 @@ def simplify_quadric_error(mesh, face_count=1):
         new_adj = set()
         for fid in face_dict[vid2]:
             f = graph.faces[fid]
-            if vid1 in f:
+            if f is None:
                 continue
             
             other_vs = [v for v in f if v != vid2 and v not in remove_vs]
@@ -201,14 +202,12 @@ def simplify_quadric_error(mesh, face_count=1):
         v1.adj_vs = v1.adj_vs.union(new_adj)
         for vid in new_adj:
             key1 = (vid2, vid) if vid2 < vid else (vid, vid2)
-            print("pop4", vid2, vid)
             graph.edges.pop(key1)
             graph.verts[vid].adj_vs.remove(vid2)
             graph.verts[vid].adj_vs.add(vid1)
 
             key2 = (vid1, vid) if vid1 < vid else (vid, vid1)
             assert key2 not in graph.edges, f"Warning: edge already exists, {vid1}, {vid}"
-            print("new edge2", vid1, vid)
             e = Edge(key2[0], key2[1])
             e.quadrics = v1.quadrics + graph.verts[vid].quadrics
             e.min_vert, e.min_err = get_min_err(e.quadrics)
@@ -216,10 +215,11 @@ def simplify_quadric_error(mesh, face_count=1):
             heapq.heappush(heap, e)
         face_dict.pop(vid2)
 
-    verts = np.array([v.pos for v in graph.verts if v.pos is not None])
+    verts = np.stack([v.pos for v in graph.verts if v.pos is not None])
     mask_pop = np.array([v.pos is not None for v in graph.verts], dtype=bool)
     new_id = mask_pop.astype(int).cumsum() - mask_pop
-    faces = np.array([[new_id[i] for i in f if mask_pop[i]] for f in graph.faces]) # TODO
+    faces = np.array([[new_id[i] for i in f if mask_pop[i]] for f in graph.faces if f is not None])
+    print(verts.shape, faces.shape)
 
     mesh = trimesh.Trimesh(verts, faces)
     return mesh
@@ -250,13 +250,13 @@ if __name__ == '__main__':
     #     mesh_subdivided.export(f'assets/assignment1/icosahedron_subdivided_{i}.obj')
         
     # quadratic error mesh decimation
-    mesh = trimesh.load('assets/assignment1/icosahedron_subdivided_4.obj')
-    # mesh_decimated = mesh.simplify_quadric_decimation(1024)
-    # mesh_decimated.export('assets/assignment1/bunny_decimated_gt.obj')
+    mesh = trimesh.load('assets/bunny.obj')
+    mesh_decimated = mesh.simplify_quadric_decimation(1024)
+    mesh_decimated.export('assets/assignment1/bunny_decimated_gt.obj')
     
     # TODO: implement your own quadratic error mesh decimation here
-    mesh_decimated = simplify_quadric_error(mesh, face_count=12)
+    mesh_decimated = simplify_quadric_error(mesh, face_count=1024)
     
     # print the new mesh information and save the mesh
     print(f'Decimated Mesh Info: {mesh_decimated}')
-    mesh_decimated.export('assets/assignment1/test.obj')
+    mesh_decimated.export('assets/assignment1/bunny_decimated.obj')
