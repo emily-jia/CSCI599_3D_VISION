@@ -210,28 +210,28 @@ def simplify_quadric_error(mesh, face_count=1):
 
 if __name__ == '__main__':
     # Load mesh and print information
-    # mesh = trimesh.load_mesh('assets/cube.obj')
-    # mesh = trimesh.creation.box(extents=[1, 1, 1])
-    # print(f'Mesh Info: {mesh}')
+    mesh = trimesh.load_mesh('assets/cube.obj')
+    mesh = trimesh.creation.box(extents=[1, 1, 1])
+    print(f'Mesh Info: {mesh}')
     
-    # # apply loop subdivision over the loaded mesh
-    # mesh_subdivided = mesh.subdivide_loop(iterations=1)
-    # mesh_subdivided.export('assets/assignment1/gt_1.obj')
+    # apply loop subdivision over the loaded mesh
+    mesh_subdivided = mesh.subdivide_loop(iterations=1)
+    mesh_subdivided.export('assets/assignment1/gt_1.obj')
     
-    # # TODO: implement your own loop subdivision here
-    # for i in range(1, 5):
-    #     mesh_subdivided = subdivision_loop(mesh, iterations=i)
+    # TODO: implement your own loop subdivision here
+    for i in range(1, 5):
+        mesh_subdivided = subdivision_loop(mesh, iterations=i)
     
-    #     # print the new mesh information and save the mesh
-    #     print(f'Subdivided Mesh Info: {mesh_subdivided}')
-    #     mesh_subdivided.export(f'assets/assignment1/cube_subdivided_{i}.obj')
+        # print the new mesh information and save the mesh
+        print(f'Subdivided Mesh Info: {mesh_subdivided}')
+        mesh_subdivided.export(f'assets/assignment1/cube_subdivided_{i}.obj')
 
-    # mesh = trimesh.creation.icosahedron()
-    # print(f'Mesh Info: {mesh}')
-    # for i in range(1, 5):
-    #     mesh_subdivided = subdivision_loop(mesh, iterations=i)
-    #     print(f'Subdivided Mesh Info: {mesh_subdivided}')
-    #     mesh_subdivided.export(f'assets/assignment1/icosahedron_subdivided_{i}.obj')
+    mesh = trimesh.creation.icosahedron()
+    print(f'Mesh Info: {mesh}')
+    for i in range(1, 5):
+        mesh_subdivided = subdivision_loop(mesh, iterations=i)
+        print(f'Subdivided Mesh Info: {mesh_subdivided}')
+        mesh_subdivided.export(f'assets/assignment1/icosahedron_subdivided_{i}.obj')
         
     # quadratic error mesh decimation
     mesh = trimesh.load('assets/bunny_manifold.ply')
