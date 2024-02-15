@@ -152,7 +152,6 @@ def simplify_quadric_error(mesh, face_count=1):
         v2.pos = None
         v1.quadrics = e.quadrics
         v2.quadrics = None
-        print(f"collapse {vid1}, {vid2}")
 
         for vid in v2.adj_vs:
             key = (vid2, vid) if vid2 < vid else (vid, vid2)
