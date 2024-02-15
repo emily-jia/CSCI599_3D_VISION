@@ -134,7 +134,7 @@ def simplify_quadric_error(mesh, face_count=1):
             e.min_vert, e.min_err = get_min_err(K)
         else:
             e = graph.edges[(vid1, vid2)]
-            e.min_err = float('inf')
+
 
     heap = list(graph.edges.values())
     cur_faces = len(graph.faces)
@@ -152,31 +152,22 @@ def simplify_quadric_error(mesh, face_count=1):
         v2.pos = None
         v1.quadrics = e.quadrics
         v2.quadrics = None
+        print(f"collapse {vid1}, {vid2}")
 
-        v1.adj_vs.remove(vid2)
-        graph.edges.pop((vid1, vid2) if vid1 < vid2 else (vid2, vid1))
-        remove_vs = list()
-        # collapse the edge
-        del_faces = []
-        for fid in face_dict[vid1]:
-            if vid2 in graph.faces[fid]:
-                cur_faces -= 1
-                del_faces.append(fid)
-
-                other_v = [v for v in graph.faces[fid] if v != vid2 and v != vid1][0]
-                remove_vs.append(other_v)
-                graph.edges.pop((vid2, other_v) if vid2 < other_v else (other_v, vid2))
-                graph.verts[other_v].adj_vs.remove(vid2)
-                face_dict[other_v].remove(fid)
-                
-        for fid in del_faces:
-            face_dict[vid1].remove(fid)
-            graph.faces[fid] = None
-            
+        for vid in v2.adj_vs:
+            key = (vid2, vid) if vid2 < vid else (vid, vid2)
+            graph.edges.pop(key)
+            graph.verts[vid].adj_vs.remove(vid2)
+            if vid != vid1:
+                graph.verts[vid].adj_vs.add(vid1)
+        
+        v1.adj_vs = v1.adj_vs.union(v2.adj_vs)
+        v1.adj_vs.remove(vid1)
         for vid in v1.adj_vs:
             key = (vid1, vid) if vid1 < vid else (vid, vid1)
-            prev_e = graph.edges[key]
-            prev_e.quadrics = None
+            if key in graph.edges:
+                prev_e = graph.edges[key]
+                prev_e.quadrics = None
 
             new_e = Edge(key[0], key[1])
             new_e.quadrics = v1.quadrics + graph.verts[vid].quadrics
@@ -184,35 +175,29 @@ def simplify_quadric_error(mesh, face_count=1):
             graph.edges[key] = new_e
             heapq.heappush(heap, new_e)
 
-        new_adj = set()
+        # update faces
+        del_faces = []
+        for fid in face_dict[vid1]:
+            if vid2 in graph.faces[fid]:
+                cur_faces -= 1
+                del_faces.append(fid)
+
+                other_v = [v for v in graph.faces[fid] if v != vid2 and v != vid1][0]
+                face_dict[other_v].remove(fid)     
+        for fid in del_faces:
+            face_dict[vid1].remove(fid)
+            graph.faces[fid] = None
+
         for fid in face_dict[vid2]:
             f = graph.faces[fid]
             if f is None:
                 continue
-            
-            other_vs = [v for v in f if v != vid2 and v not in remove_vs]
-            for vid in other_vs:
-                new_adj.add(vid)
                 
             face_dict[vid1].append(fid)
             for i, vid in enumerate(f):
                 if vid == vid2:
                     graph.faces[fid][i] = vid1
-        
-        v1.adj_vs = v1.adj_vs.union(new_adj)
-        for vid in new_adj:
-            key1 = (vid2, vid) if vid2 < vid else (vid, vid2)
-            graph.edges.pop(key1)
-            graph.verts[vid].adj_vs.remove(vid2)
-            graph.verts[vid].adj_vs.add(vid1)
 
-            key2 = (vid1, vid) if vid1 < vid else (vid, vid1)
-            assert key2 not in graph.edges, f"Warning: edge already exists, {vid1}, {vid}"
-            e = Edge(key2[0], key2[1])
-            e.quadrics = v1.quadrics + graph.verts[vid].quadrics
-            e.min_vert, e.min_err = get_min_err(e.quadrics)
-            graph.edges[key2] = e
-            heapq.heappush(heap, e)
         face_dict.pop(vid2)
 
     verts = np.stack([v.pos for v in graph.verts if v.pos is not None])
@@ -250,7 +235,7 @@ if __name__ == '__main__':
     #     mesh_subdivided.export(f'assets/assignment1/icosahedron_subdivided_{i}.obj')
         
     # quadratic error mesh decimation
-    mesh = trimesh.load('assets/bunny.obj')
+    mesh = trimesh.load('assets/bunny_manifold.ply')
     mesh_decimated = mesh.simplify_quadric_decimation(1024)
     mesh_decimated.export('assets/assignment1/bunny_decimated_gt.obj')
     
