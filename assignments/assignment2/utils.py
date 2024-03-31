@@ -104,5 +104,16 @@ def draw_correspondences(img, ptsTrue, ptsReproj, ax, drawOnly=50):
     ax.imshow(img)
     
     # TODO: draw correspondence between ptsTrue and ptsReproj
+    n = ptsTrue.shape[0]
+    assert n == ptsReproj.shape[0], 'Number of points should be the same'
+
+    ptsTrue = np.round(ptsTrue).astype(int)
+    ptsReproj = np.round(ptsReproj).astype(int)
+    
+    draw_idx = np.random.choice(n,drawOnly,replace=False)
+    for i in draw_idx: 
+        ax.plot([ptsTrue[i,0],ptsReproj[i,0]],[ptsTrue[i,1],ptsReproj[i,1]],'r-')
+        ax.plot(ptsTrue[i,0],ptsTrue[i,1],'bo')
+        ax.plot(ptsReproj[i,0],ptsReproj[i,1],'go')
 
     return ax

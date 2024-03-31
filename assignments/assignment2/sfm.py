@@ -22,13 +22,13 @@ def set_arguments(parser):
     """
 
     #directory stuff
-    parser.add_argument('--data_dir',action='store',type=str,default='./assets/assignment2/Benchmarking_Camera_Calibration_2008',dest='data_dir',
+    parser.add_argument('--data_dir',action='store',type=str,default='../../assets/assignment2/Benchmarking_Camera_Calibration_2008',dest='data_dir',
                         help='root directory containing input data (default: ../data/)') 
     parser.add_argument('--dataset',action='store',type=str,default='fountain-P11',dest='dataset',
                         help='name of dataset (default: fountain-P11)') 
     parser.add_argument('--ext',action='store',type=str,default='jpg,png',dest='ext', 
                         help='comma seperated string of allowed image extensions (default: jpg,png)') 
-    parser.add_argument('--out_dir',action='store',type=str,default='./assets/assignment2/results/',dest='out_dir',
+    parser.add_argument('--out_dir',action='store',type=str,default='../../assets/assignment2/results/',dest='out_dir',
                         help='root directory to store results in (default: ../results/)') 
 
     #matching parameters
@@ -232,26 +232,14 @@ class SFM(object):
             E = self.K.T.dot(F.dot(self.K))
             _,R,t,_ = cv2.recoverPose(E,img1pts[mask],img2pts[mask],self.K)
 
-            self.image_data[name1] = [np.eye(3,3), np.zeros((3,1)), np.ones((len(kp1),))*-1]
-            self.image_data[name2] = [R,t,np.ones((len(kp2),))*-1]
+            self.image_data[name1] = [np.eye(3,3), np.zeros((3,1)), np.ones((len(kp1),), dtype=int)*-1]
+            self.image_data[name2] = [R,t,np.ones((len(kp2),), dtype=int)*-1]
 
             self.matches_data[(name1,name2)] = [matches, img1pts[mask], img2pts[mask], img1idx[mask],img2idx[mask]]
 
             return R,t
-
-    def triangulate_two_views(self, name1, name2): 
-        """
-        Triangulates the 3D coordinates of matched points between two views.
-
-        Args:
-            name1 (str): Name of the first image view.
-            name2 (str): Name of the second image view.
-
-        Returns:
-            None
-        """
-
-        def triangulation(img1pts, img2pts, R1, t1, R2, t2): 
+    
+    def triangulation(self, img1pts, img2pts, R1, t1, R2, t2): 
             """
             Perform triangulation to estimate the 3D coordinates of points in the scene.
 
@@ -281,23 +269,33 @@ class SFM(object):
             pts3d = cv2.convertPointsFromHomogeneous(pts4d.T)[:,0,:]
 
             return pts3d
+    
+    def update_3D_reference(self, ref1, ref2, img1idx, img2idx, upp_limit, low_limit=0): 
+        ref1[img1idx] = np.arange(upp_limit) + low_limit
+        ref2[img2idx] = np.arange(upp_limit) + low_limit
 
-        def update_3D_reference(ref1, ref2, img1idx, img2idx, upp_limit, low_limit=0): 
+        return ref1, ref2
 
-            ref1[img1idx] = np.arange(upp_limit) + low_limit
-            ref2[img2idx] = np.arange(upp_limit) + low_limit
+    def triangulate_two_views(self, name1, name2): 
+        """
+        Triangulates the 3D coordinates of matched points between two views.
 
-            return ref1, ref2
+        Args:
+            name1 (str): Name of the first image view.
+            name2 (str): Name of the second image view.
 
+        Returns:
+            None
+        """
         R1, t1, ref1 = self.image_data[name1]
         R2, t2, ref2 = self.image_data[name2]
 
         _, img1pts, img2pts, img1idx, img2idx = self.matches_data[(name1,name2)]
         
-        new_point_cloud = triangulation(img1pts, img2pts, R1, t1, R2, t2)
+        new_point_cloud = self.triangulation(img1pts, img2pts, R1, t1, R2, t2)
         self.point_cloud = np.concatenate((self.point_cloud, new_point_cloud), axis=0)
 
-        ref1, ref2 = update_3D_reference(ref1, ref2, img1idx, img2idx,new_point_cloud.shape[0],
+        ref1, ref2 = self.update_3D_reference(ref1, ref2, img1idx, img2idx,new_point_cloud.shape[0],
                                         self.point_cloud.shape[0]-new_point_cloud.shape[0])
         self.image_data[name1][-1] = ref1 
         self.image_data[name2][-1] = ref2 
@@ -312,20 +310,50 @@ class SFM(object):
         Returns:
             None
         """
+        kp2, desc2 = self.load_features(name) 
+        R, t, cur_ref = self.image_data[name]
+        threshold = self.opts.reprojection_thres
         for prev_name in self.image_data.keys(): 
             if prev_name != name: 
                 kp1, desc1 = self.load_features(prev_name)
+                kp1, desc1 = self.load_features(prev_name)
+                kp2, desc2 = self.load_features(name)  
+                kp1, desc1 = self.load_features(prev_name)                
                 kp2, desc2 = self.load_features(name)  
 
                 prev_name_ref = self.image_data[prev_name][-1]
                 matches = self.load_matches(prev_name,name)
                 matches = [match for match in matches if prev_name_ref[match.queryIdx] < 0]
+                matches = [match for match in matches if cur_ref[match.trainIdx] < 0]
 
                 if len(matches) > 0: 
                     # TODO: Process the new view
-                    pass
+                    matches = sorted(matches, key = lambda x:x.distance)
+                    img1pts, img2pts, img1idx, img2idx = self.get_aligned_matches(kp1,desc1,kp2,desc2,matches)   
+                    R_prev, t_prev, _ = self.image_data[prev_name]
+
+                    new_point_cloud = self.triangulation(img1pts, img2pts, R_prev, t_prev, R, t)
+
+                    # compute reprojection error to new view and prev view
+                    reproj_prev, _ = cv2.projectPoints(new_point_cloud, R_prev, t_prev, self.K, None)
+                    reproj_cur, _ = cv2.projectPoints(new_point_cloud, R, t, self.K, None)
+                    err_prev = np.linalg.norm(img1pts - reproj_prev[:,0,:], axis=-1)
+                    err_cur = np.linalg.norm(img2pts - reproj_cur[:,0,:], axis=-1)
+                    mask_match = (err_prev < threshold) & (err_cur < threshold)
+
+                    new_point_cloud = new_point_cloud[mask_match]
+                    img1pts, img2pts = img1pts[mask_match], img2pts[mask_match]
+                    img1idx, img2idx = img1idx[mask_match], img2idx[mask_match]
+
+                    self.point_cloud = np.concatenate((self.point_cloud, new_point_cloud), axis=0)
+
+                    prev_name_ref, cur_ref = self.update_3D_reference(prev_name_ref, cur_ref, img1idx, img2idx,
+                                                                    new_point_cloud.shape[0], self.point_cloud.shape[0]-new_point_cloud.shape[0])
+                    self.image_data[prev_name][-1] = prev_name_ref
+                    
                 else: 
                     print('skipping {} and {}'.format(prev_name, name))
+        self.image_data[name][-1] = cur_ref
         
     def new_view_pose_estimation(self, name): 
         """
@@ -385,7 +413,7 @@ class SFM(object):
                             confidence=self.opts.pnp_prob,flags=getattr(cv2,self.opts.pnp_method),
                             reprojectionError=self.opts.reprojection_thres)
         R,_=cv2.Rodrigues(R)
-        self.image_data[name] = [R,t,np.ones((ref_len,))*-1]
+        self.image_data[name] = [R,t,np.ones((ref_len,), dtype=int)*-1]
 
     def generate_ply(self, filename):
         
@@ -422,13 +450,20 @@ class SFM(object):
         # TODO: Reprojection error calculation
         R, t, ref = self.image_data[name]
         kp, desc = self.load_features(name)
-        err = 0
+
+        mask_with_ref = ref >= 0
+        pc_pts = self.point_cloud[ref[mask_with_ref]]
+        reproj_pts, _ = cv2.projectPoints(pc_pts, R, t, self.K, None)
+        reproj_pts = reproj_pts[:,0,:]
+
+        img_pts = np.array([_kp.pt for _kp in kp])[mask_with_ref]
+        err = np.mean(np.linalg.norm(img_pts - reproj_pts, axis=-1))
 
         # TODO: PLOT here
         if self.opts.plot_error: 
             fig,ax = plt.subplots()
             image = cv2.imread(os.path.join(self.images_dir, name+'.jpg'))[:,:,::-1]
-            # ax = draw_correspondences(image, img_pts, reproj_pts, ax)
+            ax = draw_correspondences(image, img_pts, reproj_pts, ax)
             ax.set_title('reprojection error = {}'.format(err))
             fig.savefig(os.path.join(self.out_err_dir, '{}.png'.format(name)))
             plt.close(fig)
