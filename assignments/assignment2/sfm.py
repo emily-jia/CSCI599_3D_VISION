@@ -316,10 +316,6 @@ class SFM(object):
         for prev_name in self.image_data.keys(): 
             if prev_name != name: 
                 kp1, desc1 = self.load_features(prev_name)
-                kp1, desc1 = self.load_features(prev_name)
-                kp2, desc2 = self.load_features(name)  
-                kp1, desc1 = self.load_features(prev_name)                
-                kp2, desc2 = self.load_features(name)  
 
                 prev_name_ref = self.image_data[prev_name][-1]
                 matches = self.load_matches(prev_name,name)
@@ -541,6 +537,27 @@ class SFM(object):
 
         mean_error = sum(errors) / float(len(errors))
         print('Reconstruction Completed: Mean Reprojection Error = {2} [t={0:.6}s], Results stored in {1}'.format(total_time, self.opts.out_dir, mean_error))
+
+        # plot camera trajectory
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        for k in self.image_data.keys():
+            R, t, _ = self.image_data[k]
+            ax.scatter(t[0], t[1], t[2], label=k)
+            plane = np.array([[-0.5, -0.5, 1], [0.5, -0.5, 1], [0.5, 0.5, 1], [-0.5, 0.5, 1]])
+            plane = (R.dot(plane.T) + t).T
+            # plot 3d parallelogram
+            ax.plot(plane[[0, 1], 0], plane[[0, 1], 1], plane[[0, 1], 2], color='b')
+            ax.plot(plane[[1, 2], 0], plane[[1, 2], 1], plane[[1, 2], 2], color='b')
+            ax.plot(plane[[2, 3], 0], plane[[2, 3], 1], plane[[2, 3], 2], color='b')
+            ax.plot(plane[[3, 0], 0], plane[[3, 0], 1], plane[[3, 0], 2], color='b')
+
+        # save camera trajectory plot
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('Camera Trajectory')
+        fig.savefig(os.path.join(self.out_err_dir, 'camera_trajectory.png'))
         
 
 if __name__=='__main__': 
